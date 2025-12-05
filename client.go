@@ -1,8 +1,8 @@
-// Package eveauth provides users the ability to authenticate characters
+// Package eveauth provides the ability to authenticate characters
 // with the Eve Online Single Sign-On (SSO) service.
 //
 // It implements OAuth 2.0 with the PKCS authorization flow
-// and is designed primarily for desktop and mobile applications.
+// and is designed for desktop applications.
 package eveauth
 
 import (
@@ -113,7 +113,7 @@ type Config struct {
 }
 
 // client represents a client for authenticating Eve Online characters with the SSO service.
-// It is designed for desktop and mobile apps
+// It is designed for desktop apps
 // and implements OAuth 2.0 with the PKCE protocol.
 //
 // A client instance is re-usable and applications usually only need to hold one instance.
