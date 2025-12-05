@@ -1,6 +1,6 @@
 module github.com/ErikKalkoken/eveauth
 
-go 1.25.3
+go 1.24.0
 
 require (
 	github.com/lestrrat-go/jwx/v2 v2.1.6

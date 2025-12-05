@@ -69,7 +69,7 @@ var jwkSetData = map[string]any{
 	"SkipUnresolvedJsonWebKeys": true,
 }
 
-func TestSSO_End2End(t *testing.T) {
+func TestClient_End2End(t *testing.T) {
 	ctx := context.Background()
 	// monkey patching 3rd party packages
 	jwkFetchOrig := jwkFetch
@@ -153,7 +153,7 @@ func TestSSO_End2End(t *testing.T) {
 		})
 		require.NoError(t, err)
 		// when
-		token, err := s.Authenticate(ctx, []string{"alpha"})
+		token, err := s.Authorize(ctx, []string{"alpha"})
 		// then
 		require.NoError(t, err)
 		assert.Equal(t, "access_token", token.AccessToken)
@@ -189,7 +189,7 @@ func TestSSO_End2End(t *testing.T) {
 		})
 		require.NoError(t, err)
 		// when
-		_, err = s.Authenticate(ctx, []string{"alpha"})
+		_, err = s.Authorize(ctx, []string{"alpha"})
 		// then
 		assert.Error(t, err)
 	})
@@ -213,7 +213,7 @@ func TestSSO_End2End(t *testing.T) {
 		})
 		require.NoError(t, err)
 		// when
-		_, err = s.Authenticate(ctx, []string{"alpha"})
+		_, err = s.Authorize(ctx, []string{"alpha"})
 		// then
 		assert.Error(t, err)
 	})
@@ -242,7 +242,7 @@ func TestSSO_End2End(t *testing.T) {
 		}
 		defer func() { jwkFetch = originalPatch }()
 		// when
-		_, err = s.Authenticate(ctx, []string{"alpha"})
+		_, err = s.Authorize(ctx, []string{"alpha"})
 		// then
 		assert.Error(t, err)
 	})
@@ -271,7 +271,7 @@ func TestSSO_End2End(t *testing.T) {
 		}
 		defer func() { jwkParseString = originalPatch }()
 		// when
-		_, err = s.Authenticate(ctx, []string{"alpha"})
+		_, err = s.Authorize(ctx, []string{"alpha"})
 		// then
 		assert.Error(t, err)
 	})
@@ -390,7 +390,7 @@ func TestSSO_End2End(t *testing.T) {
 	})
 }
 
-func TestSSO_New(t *testing.T) {
+func TestClient_New(t *testing.T) {
 	t.Run("can create a new service with defaults", func(t *testing.T) {
 		s, err := NewClient(Config{
 			ClientID: "clientID",
@@ -419,7 +419,7 @@ func TestSSO_New(t *testing.T) {
 	})
 }
 
-func TestSSO_FetchNewToken(t *testing.T) {
+func TestClient_FetchNewToken(t *testing.T) {
 	t.Run("can fetch new token from API", func(t *testing.T) {
 		// given
 		var actualRequestBody []byte
@@ -491,7 +491,7 @@ func TestSSO_FetchNewToken(t *testing.T) {
 	})
 }
 
-func TestSSO_FetchRefreshedToken(t *testing.T) {
+func TestClient_FetchRefreshedToken(t *testing.T) {
 	t.Run("can retrieve refreshed token from SSO", func(t *testing.T) {
 		// given
 		var actualRequestBody []byte
@@ -558,6 +558,19 @@ func TestSSO_FetchRefreshedToken(t *testing.T) {
 		_, err = s.fetchRefreshedToken("refreshToken")
 		// then
 		assert.ErrorIs(t, err, ErrTokenError)
+	})
+}
+
+func TestClient_Uninitialized(t *testing.T) {
+	t.Run("should return error when trying to authorize without initalization", func(t *testing.T) {
+		c := &Client{}
+		_, err := c.Authorize(context.Background(), []string{})
+		assert.ErrorIs(t, err, ErrNotInitialized)
+	})
+	t.Run("should return error when trying to refresh without initalization", func(t *testing.T) {
+		c := &Client{}
+		err := c.RefreshToken(context.Background(), &Token{})
+		assert.ErrorIs(t, err, ErrNotInitialized)
 	})
 }
 

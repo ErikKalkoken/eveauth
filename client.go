@@ -1,8 +1,5 @@
-// Package eveauth provides the ability to authenticate characters
-// with the Eve Online Single Sign-On (SSO) service.
-//
-// It implements OAuth 2.0 with the PKCS authorization flow
-// and is designed for desktop applications.
+// Package eveauth provides a client for authorizing desktop applications
+// using the EVE Online Single Sign-On (SSO) service.
 package eveauth
 
 import (
@@ -42,6 +39,7 @@ const (
 	protocol            = "http://"
 	resourceHost        = "login.eveonline.com"
 	tokenURLDefault     = "https://login.eveonline.com/v2/oauth/token"
+	completedPath       = "/authorized"
 )
 
 //go:embed tmpl/*
@@ -51,21 +49,22 @@ var (
 	ErrAborted        = errors.New("process aborted prematurely")
 	ErrAlreadyRunning = errors.New("another instance is already running")
 	ErrInvalid        = errors.New("invalid operation")
+	ErrNotInitialized = errors.New("not initialized")
 	ErrTokenError     = errors.New("token error")
 )
 
 // Token represents an OAuth2 token for a character in Eve Online.
 type Token struct {
-	AccessToken   string
-	CharacterID   int32
-	CharacterName string
-	ExpiresAt     time.Time
-	RefreshToken  string
-	Scopes        []string
-	TokenType     string
+	AccessToken   string    `json:"access_token"`
+	CharacterID   int32     `json:"character_id"`
+	CharacterName string    `json:"character_name"`
+	ExpiresAt     time.Time `json:"expires_at"`
+	RefreshToken  string    `json:"refresh_token"`
+	Scopes        []string  `json:"scopes"`
+	TokenType     string    `json:"token_type"`
 }
 
-// newToken creates e new [Token] from a [tokenPayload] and returns it.
+// newToken creates e new Token from a tokenPayload and returns it.
 func newToken(rawToken *tokenPayload, characterID int, characterName string, scopes []string) *Token {
 	t := &Token{
 		AccessToken:   rawToken.AccessToken,
@@ -91,7 +90,7 @@ type Config struct {
 	// The default is "callback".
 	CallbackPath string
 
-	// The HTTP client to use for all requests. Uses the [http.DefaultClient] by default.
+	// The HTTP client to use for all requests. Uses http.DefaultClient by default.
 	HTTPClient *http.Client
 
 	// Customer logger instance. Uses slog by default.
@@ -101,7 +100,7 @@ type Config struct {
 	// The default will open an URL in the default browser of the current system.
 	OpenURL func(string) error
 
-	// When enabled will keep the SSO server running and not start the authentication.
+	// When enabled will keep the SSO server running and not start the authorization flow.
 	// This feature is for testing purposes only.
 	IsDemoMode bool
 
@@ -112,39 +111,35 @@ type Config struct {
 	TokenURL string
 }
 
-// client represents a client for authenticating Eve Online characters with the SSO service.
-// It is designed for desktop apps
-// and implements OAuth 2.0 with the PKCE protocol.
-//
-// A client instance is re-usable and applications usually only need to hold one instance.
-type client struct {
-	authorizeURL     string
-	callbackPath     string
-	clientID         string
-	httpClient       *http.Client
-	isAuthenticating atomic.Bool
-	isDemoMode       bool
-	logger           LeveledLogger
-	openURL          func(string) error
-	port             int
-	tokenURL         string
+// Client is a client for authorizing desktop applications with the EVE Online SSO service.
+// It implements OAuth 2.0 with the PKCE protocol.
+// A Client instance is re-usable.
+type Client struct {
+	authorizeURL  string
+	callbackPath  string
+	clientID      string
+	httpClient    *http.Client
+	isAuthorizing atomic.Bool
+	isDemoMode    bool
+	logger        LeveledLogger
+	openURL       func(string) error
+	port          int
+	tokenURL      string
 }
 
-// NewClient returns a new client for authenticating characters.
+// NewClient returns a valid client from a configuration.
+// It will return an error if the provided configuration is invalid.
 //
-// A client needs to be configured with config.
-// NewClient will return an error if the configuration is invalid.
-//
-// The callback URL is generated from the configuration and might look like this:
+// The callback URL is constructed from the configuration and might look like this:
 // http://localhost:8000/callback
-func NewClient(config Config) (*client, error) {
+func NewClient(config Config) (*Client, error) {
 	if config.ClientID == "" {
 		return nil, fmt.Errorf("must specify client ID: %w", ErrInvalid)
 	}
 	if config.Port == 0 {
 		return nil, fmt.Errorf("must specify port: %w", ErrInvalid)
 	}
-	s := &client{
+	s := &Client{
 		authorizeURL: authorizeURLDefault,
 		callbackPath: callbackPathDefault,
 		clientID:     config.ClientID,
@@ -179,33 +174,33 @@ func NewClient(config Config) (*client, error) {
 	return s, nil
 }
 
-// Authenticate starts the SSO authentication process for a character
-// and returns the new token when successful.
+// Authorize starts the authorization flow and returns a new token when successful.
 //
 // At the beginning the SSO login page will be opened in the browser.
-// When completed successfully a landing page will be shown in the browser.
+// On completion of the flow a landing page will be shown in the browser.
 //
-// The process can be canceled through ctx and will then return [ErrAborted].
+// This function blocks and can be canceled through the context and will then return [ErrAborted].
 //
 // Only one instance of this function may run at the same time.
 // Trying to run another instance will return [ErrAlreadyRunning].
-//
-// Authenticate will temporarily run a local web server with logging enabled.
-func (s *client) Authenticate(ctx context.Context, scopes []string) (*Token, error) {
-	if !s.isAuthenticating.CompareAndSwap(false, true) {
-		return nil, fmt.Errorf("sso-authenticate: %w", ErrAlreadyRunning)
+func (s *Client) Authorize(ctx context.Context, scopes []string) (*Token, error) {
+	if s.clientID == "" || s.port == 0 {
+		return nil, ErrNotInitialized
+	}
+	if !s.isAuthorizing.CompareAndSwap(false, true) {
+		return nil, fmt.Errorf("authorize: %w", ErrAlreadyRunning)
 	}
 	defer func() {
-		s.isAuthenticating.Store(false)
+		s.isAuthorizing.Store(false)
 	}()
 	codeVerifier, err := generateRandomStringBase64(32)
 	if err != nil {
-		return nil, fmt.Errorf("sso-authenticate: %w", err)
+		return nil, fmt.Errorf("authorize: %w", err)
 	}
 	serverCtx := context.WithValue(ctx, keyCodeVerifier, codeVerifier)
 	state, err := generateRandomStringBase64(16)
 	if err != nil {
-		return nil, fmt.Errorf("sso-authenticate: %w", err)
+		return nil, fmt.Errorf("authorize: %w", err)
 	}
 	serverCtx = context.WithValue(serverCtx, keyState, state)
 	serverCtx, cancel := context.WithCancel(serverCtx)
@@ -218,9 +213,9 @@ func (s *client) Authenticate(ctx context.Context, scopes []string) (*Token, err
 	)
 
 	processError := func(w http.ResponseWriter, status int, err error) {
-		s.logger.Warn("SSO authentication failed", "error", err)
-		http.Error(w, fmt.Sprintf("SSO authentication failed: %s", err), status)
-		errValue.Store(fmt.Errorf("sso-authenticate: %w", err))
+		s.logger.Warn("SSO authorization failed", "error", err)
+		http.Error(w, fmt.Sprintf("SSO authorization failed: %s", err), status)
+		errValue.Store(fmt.Errorf("authorize: %w", err))
 		cancel() // shutdown http server
 	}
 
@@ -267,10 +262,10 @@ func (s *client) Authenticate(ctx context.Context, scopes []string) (*Token, err
 		}
 		tok := newToken(rawToken, characterID, characterName, scopes)
 		token.Store(tok)
-		s.logger.Info("SSO authentication successful", "characterID", tok.CharacterID, "characterName", tok.CharacterName)
-		http.Redirect(w, r, "/authenticated", http.StatusSeeOther)
+		s.logger.Info("SSO authorization successful", "characterID", tok.CharacterID, "characterName", tok.CharacterName)
+		http.Redirect(w, r, completedPath, http.StatusSeeOther)
 	})
-	router.HandleFunc("/authenticated", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc(completedPath, func(w http.ResponseWriter, r *http.Request) {
 		var name, id string
 		tok := token.Load()
 		if tok != nil {
@@ -280,7 +275,7 @@ func (s *client) Authenticate(ctx context.Context, scopes []string) (*Token, err
 			name = "?"
 			id = "1"
 		}
-		t, err := template.ParseFS(templFS, "tmpl/authenticated.html")
+		t, err := template.ParseFS(templFS, "tmpl/authorized.html")
 		if err != nil {
 			processError(w, http.StatusInternalServerError, err)
 			return
@@ -307,22 +302,22 @@ func (s *client) Authenticate(ctx context.Context, scopes []string) (*Token, err
 	}
 	l, err := net.Listen("tcp", server.Addr)
 	if err != nil {
-		return nil, fmt.Errorf("sso-authenticate: listen on address: %w", err)
+		return nil, fmt.Errorf("authorize: listen on address: %w", err)
 	}
 	defer func() {
 		if err := server.Close(); err != nil {
-			s.logger.Error("sso-server: server close", "error", err)
+			s.logger.Error("authorize: server closed", "error", err)
 		}
 	}()
 
-	s.logger.Info("sso-server started", "address", protocol+server.Addr)
+	s.logger.Info("authorize: server started", "address", protocol+server.Addr)
 
 	go func() {
 		if err := server.Serve(l); err != http.ErrServerClosed {
-			s.logger.Error("sso-server: server terminated prematurely", "error", err)
+			s.logger.Error("authorize: server terminated prematurely", "error", err)
 		}
 		cancel()
-		s.logger.Info("sso-server stopped")
+		s.logger.Info("authorize: server stopped")
 	}()
 
 	ctxPing, cncl := context.WithTimeout(ctx, pingTimeout)
@@ -330,20 +325,20 @@ func (s *client) Authenticate(ctx context.Context, scopes []string) (*Token, err
 
 	u, err := url.JoinPath(protocol+server.Addr, "ping")
 	if err != nil {
-		return nil, fmt.Errorf("sso-authenticate: invalid path: %w", err)
+		return nil, fmt.Errorf("authorize: invalid path: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctxPing, http.MethodGet, u, nil)
 	if err != nil {
-		return nil, fmt.Errorf("sso-authenticate: prepare ping: %w", err)
+		return nil, fmt.Errorf("authorize: prepare ping: %w", err)
 	}
 	_, err = s.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("sso-authenticate: ping: %w", err)
+		return nil, fmt.Errorf("authorize: ping: %w", err)
 	}
 
 	if !s.isDemoMode {
-		if err := s.startSSO(state, codeVerifier, scopes); err != nil {
-			return nil, fmt.Errorf("sso-authenticate: start SSO: %w", err)
+		if err := s.startAuthorization(state, codeVerifier, scopes); err != nil {
+			return nil, fmt.Errorf("authorize: start: %w", err)
 		}
 	}
 	<-serverCtx.Done()
@@ -352,7 +347,7 @@ func (s *client) Authenticate(ctx context.Context, scopes []string) (*Token, err
 	defer shutdownRelease()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		s.logger.Warn("sso-server: server shutdown", "error", err)
+		s.logger.Warn("authorize: server shutdown", "error", err)
 	}
 
 	if x := errValue.Load(); x != nil {
@@ -361,7 +356,7 @@ func (s *client) Authenticate(ctx context.Context, scopes []string) (*Token, err
 
 	t := token.Load()
 	if t == nil {
-		return nil, fmt.Errorf("sso-authenticate: start SSO: %w", ErrAborted)
+		return nil, fmt.Errorf("authorize: start SSO: %w", ErrAborted)
 	}
 	return t, nil
 }
@@ -377,12 +372,12 @@ func generateRandomStringBase64(length int) (string, error) {
 	return s, nil
 }
 
-func (s *client) address() string {
+func (s *Client) address() string {
 	return fmt.Sprintf("localhost:%d", s.port)
 }
 
-// Open browser and show character selection for SSO.
-func (s *client) startSSO(state string, codeVerifier string, scopes []string) error {
+// startAuthorization opens the browser and shows the character selection page for SSO.
+func (s *Client) startAuthorization(state string, codeVerifier string, scopes []string) error {
 	challenge, err := calcCodeChallenge(codeVerifier)
 	if err != nil {
 		return err
@@ -403,7 +398,7 @@ func calcCodeChallenge(codeVerifier string) (string, error) {
 	return challenge, nil
 }
 
-func (s *client) makeStartURL(challenge, state string, scopes []string) (string, error) {
+func (s *Client) makeStartURL(challenge, state string, scopes []string) (string, error) {
 	uri, err := url.JoinPath(protocol+s.address(), s.callbackPath)
 	if err != nil {
 		return "", err
@@ -436,7 +431,7 @@ func (t *tokenPayload) expiresAt() time.Time {
 }
 
 // fetchNewToken returns a new token from SSO API.
-func (s *client) fetchNewToken(code, codeVerifier string) (*tokenPayload, error) {
+func (s *Client) fetchNewToken(code, codeVerifier string) (*tokenPayload, error) {
 	form := url.Values{
 		"client_id":     {s.clientID},
 		"code_verifier": {codeVerifier},
@@ -477,17 +472,20 @@ func (s *client) fetchNewToken(code, codeVerifier string) (*tokenPayload, error)
 
 // RefreshToken refreshes token when successful
 // or returns an error when the refresh has failed.
-func (s *client) RefreshToken(ctx context.Context, token *Token) error {
+func (s *Client) RefreshToken(ctx context.Context, token *Token) error {
+	if s.clientID == "" || s.port == 0 {
+		return ErrNotInitialized
+	}
 	if token == nil || token.RefreshToken == "" {
-		return fmt.Errorf("sso-refresh: missing refresh token: %w", ErrTokenError)
+		return fmt.Errorf("refresh: missing refresh token: %w", ErrTokenError)
 	}
 	rawToken, err := s.fetchRefreshedToken(token.RefreshToken)
 	if err != nil {
-		return fmt.Errorf("sso-refresh: %w", err)
+		return fmt.Errorf("refresh: %w", err)
 	}
 	_, err = validateJWT(ctx, s.httpClient, rawToken.AccessToken)
 	if err != nil {
-		return fmt.Errorf("sso-refresh: %w", err)
+		return fmt.Errorf("refresh: %w", err)
 	}
 	token.AccessToken = rawToken.AccessToken
 	token.RefreshToken = rawToken.RefreshToken
@@ -495,7 +493,7 @@ func (s *client) RefreshToken(ctx context.Context, token *Token) error {
 	return nil
 }
 
-func (s *client) fetchRefreshedToken(refreshToken string) (*tokenPayload, error) {
+func (s *Client) fetchRefreshedToken(refreshToken string) (*tokenPayload, error) {
 	form := url.Values{
 		"client_id":     {s.clientID},
 		"grant_type":    {"refresh_token"},
