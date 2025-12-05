@@ -129,8 +129,8 @@ func TestSSO_End2End(t *testing.T) {
 		http.Error(w, "not found", http.StatusNotFound)
 		t.Fatal("unexpected URL: ", req.URL)
 	}
-	openURL := func(u *url.URL) error {
-		_, err := http.Get(u.String())
+	openURL := func(u string) error {
+		_, err := http.Get(u)
 		return err
 	}
 	t.Run("can create new token", func(t *testing.T) {
@@ -391,18 +391,10 @@ func TestSSO_End2End(t *testing.T) {
 }
 
 func TestSSO_New(t *testing.T) {
-	openURL := func(u *url.URL) error {
-		return nil
-	}
 	t.Run("can create a new service with defaults", func(t *testing.T) {
-		var isCalled bool
 		s, err := NewClient(Config{
 			ClientID: "clientID",
-			OpenURL: func(_ *url.URL) error {
-				isCalled = true
-				return nil
-			},
-			Port: 8000,
+			Port:     8000,
 		})
 		require.NoError(t, err)
 		assert.Equal(t, s.authorizeURL, authorizeURLDefault)
@@ -412,36 +404,22 @@ func TestSSO_New(t *testing.T) {
 		assert.Equal(t, s.isDemoMode, false)
 		assert.Equal(t, s.port, 8000)
 		assert.Equal(t, s.tokenURL, tokenURLDefault)
-		s.openURL(nil)
-		assert.True(t, isCalled)
 	})
 	t.Run("should return error when client ID is not configured", func(t *testing.T) {
 		_, err := NewClient(Config{
-			OpenURL: openURL,
-			Port:    8000,
+			Port: 8000,
 		})
 		assert.ErrorIs(t, err, ErrInvalid)
 	})
 	t.Run("should return error when port is not configured", func(t *testing.T) {
 		_, err := NewClient(Config{
 			ClientID: "DEMO",
-			OpenURL:  openURL,
-		})
-		assert.ErrorIs(t, err, ErrInvalid)
-	})
-	t.Run("should return error when openURL is not configured", func(t *testing.T) {
-		_, err := NewClient(Config{
-			ClientID: "DEMO",
-			Port:     8000,
 		})
 		assert.ErrorIs(t, err, ErrInvalid)
 	})
 }
 
 func TestSSO_FetchNewToken(t *testing.T) {
-	openURL := func(u *url.URL) error {
-		return nil
-	}
 	t.Run("can fetch new token from API", func(t *testing.T) {
 		// given
 		var actualRequestBody []byte
@@ -465,7 +443,7 @@ func TestSSO_FetchNewToken(t *testing.T) {
 			actualRequestHeader = req.Header.Clone()
 		}))
 		defer server.Close()
-		s, err := NewClient(Config{ClientID: "abc", OpenURL: openURL, Port: 8000})
+		s, err := NewClient(Config{ClientID: "abc", Port: 8000})
 		require.NoError(t, err)
 
 		s.tokenURL = server.URL
@@ -502,7 +480,7 @@ func TestSSO_FetchNewToken(t *testing.T) {
 			}
 		}))
 		defer server.Close()
-		s, err := NewClient(Config{ClientID: "abc", OpenURL: openURL, Port: 8000})
+		s, err := NewClient(Config{ClientID: "abc", Port: 8000})
 		require.NoError(t, err)
 
 		s.tokenURL = server.URL
@@ -514,9 +492,6 @@ func TestSSO_FetchNewToken(t *testing.T) {
 }
 
 func TestSSO_FetchRefreshedToken(t *testing.T) {
-	openURL := func(u *url.URL) error {
-		return nil
-	}
 	t.Run("can retrieve refreshed token from SSO", func(t *testing.T) {
 		// given
 		var actualRequestBody []byte
@@ -540,7 +515,7 @@ func TestSSO_FetchRefreshedToken(t *testing.T) {
 			actualRequestHeader = req.Header.Clone()
 		}))
 		defer server.Close()
-		s, err := NewClient(Config{ClientID: "abc", OpenURL: openURL, Port: 8000})
+		s, err := NewClient(Config{ClientID: "abc", Port: 8000})
 		require.NoError(t, err)
 		s.tokenURL = server.URL
 		// when
@@ -575,7 +550,7 @@ func TestSSO_FetchRefreshedToken(t *testing.T) {
 			}
 		}))
 		defer server.Close()
-		s, err := NewClient(Config{ClientID: "abc", OpenURL: openURL, Port: 8000})
+		s, err := NewClient(Config{ClientID: "abc", Port: 8000})
 		require.NoError(t, err)
 
 		s.tokenURL = server.URL
@@ -591,7 +566,6 @@ func TestMakeStartURL(t *testing.T) {
 		// given
 		s, err := NewClient(Config{
 			ClientID: "clientID",
-			OpenURL:  func(_ *url.URL) error { return nil },
 			Port:     30123,
 		})
 		require.NoError(t, err)

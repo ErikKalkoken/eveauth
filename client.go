@@ -24,6 +24,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/toqueteos/webbrowser"
 )
 
 type contextKey int
@@ -85,9 +87,6 @@ type Config struct {
 	// The port for the local webserver to run. This field is required.
 	Port int
 
-	// A function to open an URL in the system's browser. This field is required.
-	OpenURL func(*url.URL) error
-
 	// The local path for the OAuth2 callback.
 	// The default is "callback".
 	CallbackPath string
@@ -97,6 +96,10 @@ type Config struct {
 
 	// Customer logger instance. Uses slog by default.
 	Logger LeveledLogger
+
+	// A function to open an URL in the system's browser.
+	// The default will open an URL in the default browser of the current system.
+	OpenURL func(string) error
 
 	// When enabled will keep the SSO server running and not start the authentication.
 	// This feature is for testing purposes only.
@@ -122,7 +125,7 @@ type client struct {
 	isAuthenticating atomic.Bool
 	isDemoMode       bool
 	logger           LeveledLogger
-	openURL          func(*url.URL) error
+	openURL          func(string) error
 	port             int
 	tokenURL         string
 }
@@ -138,9 +141,6 @@ func NewClient(config Config) (*client, error) {
 	if config.ClientID == "" {
 		return nil, fmt.Errorf("must specify client ID: %w", ErrInvalid)
 	}
-	if config.OpenURL == nil {
-		return nil, fmt.Errorf("must specify OpenURL: %w", ErrInvalid)
-	}
 	if config.Port == 0 {
 		return nil, fmt.Errorf("must specify port: %w", ErrInvalid)
 	}
@@ -150,7 +150,7 @@ func NewClient(config Config) (*client, error) {
 		clientID:     config.ClientID,
 		httpClient:   http.DefaultClient,
 		logger:       slog.Default(),
-		openURL:      config.OpenURL,
+		openURL:      webbrowser.Open,
 		port:         config.Port,
 		tokenURL:     tokenURLDefault,
 	}
@@ -172,6 +172,9 @@ func NewClient(config Config) (*client, error) {
 	}
 	if config.Logger != nil {
 		s.logger = config.Logger
+	}
+	if config.OpenURL != nil {
+		s.openURL = config.OpenURL
 	}
 	return s, nil
 }
@@ -384,11 +387,7 @@ func (s *client) startSSO(state string, codeVerifier string, scopes []string) er
 	if err != nil {
 		return err
 	}
-	rawURL, err := s.makeStartURL(challenge, state, scopes)
-	if err != nil {
-		return err
-	}
-	u, err := url.Parse(rawURL)
+	u, err := s.makeStartURL(challenge, state, scopes)
 	if err != nil {
 		return err
 	}
