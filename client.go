@@ -257,7 +257,11 @@ func (s *client) Authenticate(ctx context.Context, scopes []string) (*Token, err
 			return
 		}
 		characterName := extractCharacterName(jwtToken)
-		scopes := extractScopes(jwtToken)
+		scopes, err := extractScopes(jwtToken)
+		if err != nil {
+			processError(w, http.StatusInternalServerError, err)
+			return
+		}
 		tok := newToken(rawToken, characterID, characterName, scopes)
 		token.Store(tok)
 		s.logger.Info("SSO authentication successful", "characterID", tok.CharacterID, "characterName", tok.CharacterName)

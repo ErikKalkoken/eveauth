@@ -5,6 +5,7 @@ import (
 
 	"github.com/lestrrat-go/jwx/v2/jwt"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestJoseExtractCharacterID(t *testing.T) {
@@ -48,13 +49,30 @@ func TestExtractCharacterID(t *testing.T) {
 }
 
 func TestExtractScopes(t *testing.T) {
-	t.Run("can return scopes", func(t *testing.T) {
+	t.Run("can return single scope", func(t *testing.T) {
+		f := newFakeToken()
+		f.data["scp"] = "alpha"
+		got, err := extractScopes(f)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"alpha"}, got)
+	})
+	t.Run("can return multiple scopes", func(t *testing.T) {
 		f := newFakeToken()
 		f.data["scp"] = []any{"alpha"}
-		assert.Equal(t, []string{"alpha"}, extractScopes(f))
+		got, err := extractScopes(f)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"alpha"}, got)
 	})
 	t.Run("should return empty string when not found", func(t *testing.T) {
 		f := newFakeToken()
-		assert.Len(t, extractScopes(f), 0)
+		got, err := extractScopes(f)
+		require.NoError(t, err)
+		assert.Len(t, got, 0)
+	})
+	t.Run("should return error when scope can not be parsed", func(t *testing.T) {
+		f := newFakeToken()
+		f.data["scp"] = 5
+		_, err := extractScopes(f)
+		assert.ErrorIs(t, err, ErrInvalid)
 	})
 }

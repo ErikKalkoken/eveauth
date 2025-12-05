@@ -73,14 +73,21 @@ func extractCharacterName(token jwt.Token) string {
 }
 
 // extractScopes returns the scopes in a JWT.
-func extractScopes(token jwt.Token) []string {
+func extractScopes(token jwt.Token) ([]string, error) {
 	scopes := make([]string, 0)
 	x, ok := token.Get("scp")
 	if !ok {
-		return scopes
+		return scopes, nil
 	}
-	for _, s := range x.([]any) {
-		scopes = append(scopes, s.(string))
+	switch y := x.(type) {
+	case string:
+		scopes = append(scopes, y)
+	case []any:
+		for _, s := range y {
+			scopes = append(scopes, s.(string))
+		}
+	default:
+		return nil, fmt.Errorf("extract scopes from JWT: %w", ErrInvalid)
 	}
-	return scopes
+	return scopes, nil
 }
