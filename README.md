@@ -10,24 +10,22 @@ A Go library for authorizing desktop applications with the EVE Online SSO servic
 
 ## Description
 
-eveauth is a Go library for authorizing desktop applications with the EVE Online [Single Sign-On](https://developers.eveonline.com/docs/services/sso/) (SSO) service.
+**eveauth** is a Go library for authorizing desktop applications with the EVE Online [Single Sign-On](https://developers.eveonline.com/docs/services/sso/) (SSO) service.
 
 It's key features are:
 
-- Implements OAuth 2.0 with the PKCS authorization flow
-- Designed for desktop applications
-- Shows a landing page in the style of the SSO pages on completion
-- Cross-platform support
-- Logging
+- Authorize desktop apps with the EVE Online SSO service
+- Renew obtained token
+- Cross-platform support (e.g. Windows, macOS, Linux)
+- Logging support
 - Configurable client
-- Tested
 
 > [!TIP]
-> Platform compatibility is mainly determined by the feature for opening a URL in the browser. The default configuration uses [github.com/toqueteos/webbrowser](https://github.com/toqueteos/webbrowser), which provides this feature for many popular platforms including Windows, macOS and Linux. Other platforms can be supported by providing a platform specific implementation of this feature. For example the application [EVE Buddy](https://github.com/ErikKalkoken/evebuddy) is using eveauth on Android with support from the [Fyne GUI toolkit](https://github.com/fyne-io/fyne).
+> Platform compatibility is mainly determined by the feature for opening a URL in the browser. The default configuration uses [github.com/toqueteos/webbrowser](https://github.com/toqueteos/webbrowser), which provides this feature for many popular platforms including Windows, macOS and Linux. Other platforms can be supported by providing a platform specific implementation of this feature. For example the application [EVE Buddy](https://github.com/ErikKalkoken/evebuddy) is using **eveauth** on Android with support from the [Fyne GUI toolkit](https://github.com/fyne-io/fyne).
 
 ## Installation
 
-You can add eveauth to your Go module with the following command:
+You can add **eveauth** to your Go module with the following command:
 
 ```sh
 go get github.com/ErikKalkoken/eveauth
@@ -35,7 +33,7 @@ go get github.com/ErikKalkoken/eveauth
 
 ## Usage
 
-This section describes how to use the eveauth library.
+This section describes how to use the **eveauth** library.
 
 ### Creating the SSO application
 
@@ -77,3 +75,10 @@ func main() {
 	fmt.Println(tok)
 }
 ```
+
+## Projects using eveauth
+
+The following projects are using **eveauth**:
+
+- [elt](https://github.com/ErikKalkoken/elt): A command line tool for looking up Eve Online objects.
+- [EVE Buddy](https://github.com/ErikKalkoken/evebuddy): A companion app for Eve Online players available on Windows, macOS, Linux and Android.
