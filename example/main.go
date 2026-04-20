@@ -10,8 +10,9 @@ import (
 
 func main() {
 	client, err := eveauth.NewClient(eveauth.Config{
-		ClientID: os.Getenv("SSO_CLIENT_ID"),
-		Port:     30123,
+		ApplicationName: "EVE Buddy",
+		ClientID:        os.Getenv("SSO_CLIENT_ID"),
+		Port:            30123,
 	})
 	if err != nil {
 		panic(err)

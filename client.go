@@ -90,6 +90,10 @@ type Config struct {
 	// The default is "callback".
 	CallbackPath string
 
+	// The name of the application shown to the user on the completion page.
+	// Will show "This application" when not configured.
+	ApplicationName string
+
 	// The HTTP client to use for all requests. Uses http.DefaultClient by default.
 	HTTPClient *http.Client
 
@@ -115,16 +119,17 @@ type Config struct {
 // It implements OAuth 2.0 with the PKCE protocol.
 // A Client instance is re-usable.
 type Client struct {
-	authorizeURL  string
-	callbackPath  string
-	clientID      string
-	httpClient    *http.Client
-	isAuthorizing atomic.Bool
-	isDemoMode    bool
-	logger        LeveledLogger
-	openURL       func(string) error
-	port          int
-	tokenURL      string
+	applicationName string
+	authorizeURL    string
+	callbackPath    string
+	clientID        string
+	httpClient      *http.Client
+	isAuthorizing   atomic.Bool
+	isDemoMode      bool
+	logger          LeveledLogger
+	openURL         func(string) error
+	port            int
+	tokenURL        string
 }
 
 // NewClient returns a valid client from a configuration.
@@ -140,14 +145,15 @@ func NewClient(config Config) (*Client, error) {
 		return nil, fmt.Errorf("must specify port: %w", ErrInvalid)
 	}
 	s := &Client{
-		authorizeURL: authorizeURLDefault,
-		callbackPath: callbackPathDefault,
-		clientID:     config.ClientID,
-		httpClient:   http.DefaultClient,
-		logger:       slog.Default(),
-		openURL:      webbrowser.Open,
-		port:         config.Port,
-		tokenURL:     tokenURLDefault,
+		applicationName: config.ApplicationName,
+		authorizeURL:    authorizeURLDefault,
+		callbackPath:    callbackPathDefault,
+		clientID:        config.ClientID,
+		httpClient:      http.DefaultClient,
+		logger:          slog.Default(),
+		openURL:         webbrowser.Open,
+		port:            config.Port,
+		tokenURL:        tokenURLDefault,
 	}
 	if config.AuthorizeURL != "" {
 		s.authorizeURL = config.AuthorizeURL
@@ -280,7 +286,11 @@ func (s *Client) Authorize(ctx context.Context, scopes []string) (*Token, error)
 			processError(w, http.StatusInternalServerError, err)
 			return
 		}
-		err = t.Execute(w, map[string]string{"Name": name, "ID": id})
+		err = t.Execute(w, map[string]string{
+			"ApplicationName": s.applicationName,
+			"CharacterID":     id,
+			"CharacterName":   name,
+		})
 		if err != nil {
 			processError(w, http.StatusInternalServerError, err)
 			return
