@@ -47,7 +47,7 @@ The client ID generated for your SSO app will be needed later for configuring th
 
 ### Using eveauth in a Go program
 
-The following program shows how to use eveauth. It will open the system's default web browser and after completing the OAuth flow for a character will return a token with the `pubicData` scope.
+The following program shows how to use eveauth. It will open the system's default web browser and after completing the OAuth flow for a character will return a token with the `publicData` scope.
 
 ```go
 package main
@@ -75,6 +75,8 @@ func main() {
 	fmt.Println(tok)
 }
 ```
+
+Additional examples can also be found in the `/examples` directory.
 
 ## Projects using eveauth
 

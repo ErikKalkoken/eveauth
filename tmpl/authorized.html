@@ -3,7 +3,7 @@
    <head>
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1">
-      <title>Authorized - EVE Buddy</title>
+      <title>Authorization Complete</title>
       <link rel="icon" href="https://cdn.jsdelivr.net/gh/ErikKalkoken/eveauth@master/public/favicon.ico" type="image/x-icon">
       <link href="https://cdn.jsdelivr.net/gh/ErikKalkoken/eveauth@master/public/styles.css" rel="stylesheet" />
    </head>
@@ -17,11 +17,15 @@
                <div class="main-content-container">
                   <h1 class="title">Authorization Complete</h1>
                   <div class="character">
-                     <img src="https://image.eveonline.com/Character/{{.ID}}_128.jpg" />
-                     <h2>{{.Name}}</h2>
+                     <img src="https://image.eveonline.com/Character/{{.CharacterID}}_128.jpg" />
+                     <h2>{{.CharacterName}}</h2>
                   </div>
-                  <p><strong>EVE Buddy</strong> has been authorized for your character.</p>
-                  <p>You can now close this tab and return to the app.</p>
+                  {{if .ApplicationName}}
+                     <p>You have successfully authorized <b>{{.ApplicationName}}</b> for <b>{{.CharacterName}}</b>.</p>
+                  {{else}}
+                     <p>You have successfully authorized this application for <b>{{.CharacterName}}</b>.</p>
+                  {{end}}
+                  <p>You can now close this tab and return to the application.</p>
                </div>
             </div>
          </main>
