@@ -465,7 +465,7 @@ func (s *Client) fetchNewToken(ctx context.Context, code, codeVerifier string) (
 		return nil, err
 	}
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Add("Host", resourceHost)
+	req.Host = resourceHost
 
 	s.logger.Info("Sending auth request to SSO API")
 	resp, err := s.httpClient.Do(req)
@@ -526,7 +526,7 @@ func (s *Client) fetchRefreshedToken(ctx context.Context, refreshToken string) (
 		return nil, err
 	}
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Add("Host", resourceHost)
+	req.Host = resourceHost
 	s.logger.Debug("Requesting token from SSO API", "grant_type", form.Get("grant_type"), "url", s.tokenURL)
 
 	resp, err := s.httpClient.Do(req)

@@ -452,6 +452,7 @@ func TestClient_FetchNewToken(t *testing.T) {
 		// given
 		var actualRequestBody []byte
 		var actualRequestHeader http.Header
+		var actualRequestHost string
 		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 			var err error
 			actualRequestBody, err = io.ReadAll(req.Body)
@@ -469,6 +470,7 @@ func TestClient_FetchNewToken(t *testing.T) {
 				t.Fatal(err)
 			}
 			actualRequestHeader = req.Header.Clone()
+			actualRequestHost = req.Host
 		}))
 		defer server.Close()
 		s, err := NewClient(Config{ClientID: "abc", Port: 8000})
@@ -480,6 +482,7 @@ func TestClient_FetchNewToken(t *testing.T) {
 		// then
 		if assert.NoError(t, err) {
 			assert.Equal(t, "application/x-www-form-urlencoded", actualRequestHeader.Get("Content-Type"))
+			assert.Equal(t, resourceHost, actualRequestHost)
 			v, err := url.ParseQuery(string(actualRequestBody))
 			if err != nil {
 				t.Fatal(err)
@@ -524,6 +527,7 @@ func TestClient_FetchRefreshedToken(t *testing.T) {
 		// given
 		var actualRequestBody []byte
 		var actualRequestHeader http.Header
+		var actualRequestHost string
 		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 			var err error
 			actualRequestBody, err = io.ReadAll(req.Body)
@@ -541,6 +545,7 @@ func TestClient_FetchRefreshedToken(t *testing.T) {
 				t.Fatal(err)
 			}
 			actualRequestHeader = req.Header.Clone()
+			actualRequestHost = req.Host
 		}))
 		defer server.Close()
 		s, err := NewClient(Config{ClientID: "abc", Port: 8000})
@@ -551,6 +556,7 @@ func TestClient_FetchRefreshedToken(t *testing.T) {
 		// then
 		if assert.NoError(t, err) {
 			assert.Equal(t, "application/x-www-form-urlencoded", actualRequestHeader.Get("Content-Type"))
+			assert.Equal(t, resourceHost, actualRequestHost)
 			v, err := url.ParseQuery(string(actualRequestBody))
 			if err != nil {
 				t.Fatal(err)
