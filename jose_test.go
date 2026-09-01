@@ -40,11 +40,21 @@ func TestExtractCharacterID(t *testing.T) {
 	t.Run("can return name", func(t *testing.T) {
 		f := newFakeToken()
 		f.data["name"] = "Johnny"
-		assert.Equal(t, "Johnny", extractCharacterName(f))
+		got, err := extractCharacterName(f)
+		require.NoError(t, err)
+		assert.Equal(t, "Johnny", got)
 	})
 	t.Run("should return empty string when not found", func(t *testing.T) {
 		f := newFakeToken()
-		assert.Equal(t, "", extractCharacterName(f))
+		got, err := extractCharacterName(f)
+		require.NoError(t, err)
+		assert.Equal(t, "", got)
+	})
+	t.Run("should return error when name is not a string", func(t *testing.T) {
+		f := newFakeToken()
+		f.data["name"] = 5
+		_, err := extractCharacterName(f)
+		assert.ErrorIs(t, err, ErrInvalid)
 	})
 }
 
@@ -72,6 +82,12 @@ func TestExtractScopes(t *testing.T) {
 	t.Run("should return error when scope can not be parsed", func(t *testing.T) {
 		f := newFakeToken()
 		f.data["scp"] = 5
+		_, err := extractScopes(f)
+		assert.ErrorIs(t, err, ErrInvalid)
+	})
+	t.Run("should return error when a scope element is not a string", func(t *testing.T) {
+		f := newFakeToken()
+		f.data["scp"] = []any{"alpha", 5}
 		_, err := extractScopes(f)
 		assert.ErrorIs(t, err, ErrInvalid)
 	})

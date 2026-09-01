@@ -260,7 +260,11 @@ func (s *Client) Authorize(ctx context.Context, scopes []string) (*Token, error)
 			processError(w, http.StatusInternalServerError, fmt.Errorf("extract character ID: %w", err))
 			return
 		}
-		characterName := extractCharacterName(jwtToken)
+		characterName, err := extractCharacterName(jwtToken)
+		if err != nil {
+			processError(w, http.StatusInternalServerError, fmt.Errorf("extract character name: %w", err))
+			return
+		}
 		scopes, err := extractScopes(jwtToken)
 		if err != nil {
 			processError(w, http.StatusInternalServerError, err)
