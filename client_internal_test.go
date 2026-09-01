@@ -417,6 +417,34 @@ func TestClient_New(t *testing.T) {
 		})
 		assert.ErrorIs(t, err, ErrInvalid)
 	})
+	t.Run("should return error instead of panicking when callback path is reserved", func(t *testing.T) {
+		for _, p := range []string{"ping", "stop", "authorized", "/"} {
+			t.Run(p, func(t *testing.T) {
+				s, err := NewClient(Config{
+					ClientID:     "DEMO",
+					Port:         8000,
+					CallbackPath: p,
+					OpenURL:      func(string) error { return nil },
+				})
+				if err != nil {
+					// Config was already rejected up front, which is fine.
+					assert.ErrorIs(t, err, ErrInvalid)
+					return
+				}
+				// Config was accepted, so Authorize must fail cleanly rather than
+				// panic when it builds its internal routes.
+				defer func() {
+					if r := recover(); r != nil {
+						t.Fatalf("Authorize panicked for reserved callback path %q: %v", p, r)
+					}
+				}()
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				_, err = s.Authorize(ctx, []string{"alpha"})
+				assert.ErrorIs(t, err, ErrInvalid)
+			})
+		}
+	})
 }
 
 func TestClient_FetchNewToken(t *testing.T) {

@@ -162,6 +162,9 @@ func NewClient(config Config) (*Client, error) {
 		cb, _ := strings.CutPrefix(config.CallbackPath, "/")
 		s.callbackPath = cb
 	}
+	if reserved := strings.TrimPrefix(completedPath, "/"); s.callbackPath == "" || s.callbackPath == "ping" || s.callbackPath == "stop" || s.callbackPath == reserved {
+		return nil, fmt.Errorf("callback path %q is reserved: %w", s.callbackPath, ErrInvalid)
+	}
 	if config.HTTPClient != nil {
 		s.httpClient = config.HTTPClient
 	}
