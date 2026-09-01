@@ -248,7 +248,7 @@ func (s *Client) Authorize(ctx context.Context, scopes []string) (*Token, error)
 		}
 		code := v.Get("code")
 		codeVerifier := serverCtx.Value(keyCodeVerifier).(string)
-		rawToken, err := s.fetchNewToken(code, codeVerifier)
+		rawToken, err := s.fetchNewToken(ctx, code, codeVerifier)
 		if err != nil {
 			processError(w, http.StatusUnauthorized, fmt.Errorf("fetch new token: %w", err))
 			return
@@ -448,14 +448,14 @@ func (t *tokenPayload) expiresAt() time.Time {
 }
 
 // fetchNewToken returns a new token from SSO API.
-func (s *Client) fetchNewToken(code, codeVerifier string) (*tokenPayload, error) {
+func (s *Client) fetchNewToken(ctx context.Context, code, codeVerifier string) (*tokenPayload, error) {
 	form := url.Values{
 		"client_id":     {s.clientID},
 		"code_verifier": {codeVerifier},
 		"code":          {code},
 		"grant_type":    {"authorization_code"},
 	}
-	req, err := http.NewRequest("POST", s.tokenURL, strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(ctx, "POST", s.tokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
 	}
@@ -496,7 +496,7 @@ func (s *Client) RefreshToken(ctx context.Context, token *Token) error {
 	if token == nil || token.RefreshToken == "" {
 		return fmt.Errorf("refresh: missing refresh token: %w", ErrTokenError)
 	}
-	rawToken, err := s.fetchRefreshedToken(token.RefreshToken)
+	rawToken, err := s.fetchRefreshedToken(ctx, token.RefreshToken)
 	if err != nil {
 		return fmt.Errorf("refresh: %w", err)
 	}
@@ -510,13 +510,13 @@ func (s *Client) RefreshToken(ctx context.Context, token *Token) error {
 	return nil
 }
 
-func (s *Client) fetchRefreshedToken(refreshToken string) (*tokenPayload, error) {
+func (s *Client) fetchRefreshedToken(ctx context.Context, refreshToken string) (*tokenPayload, error) {
 	form := url.Values{
 		"client_id":     {s.clientID},
 		"grant_type":    {"refresh_token"},
 		"refresh_token": {refreshToken},
 	}
-	req, err := http.NewRequest("POST", s.tokenURL, strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(ctx, "POST", s.tokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
 	}

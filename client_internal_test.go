@@ -70,7 +70,7 @@ var jwkSetData = map[string]any{
 }
 
 func TestClient_End2End(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	// monkey patching 3rd party packages
 	jwkFetchOrig := jwkFetch
 	jwkFetch = func(_ context.Context, _ string, _ ...jwk.FetchOption) (jwk.Set, error) {
@@ -476,7 +476,7 @@ func TestClient_FetchNewToken(t *testing.T) {
 
 		s.tokenURL = server.URL
 		// when
-		x, err := s.fetchNewToken("code", "codeVerifier")
+		x, err := s.fetchNewToken(t.Context(), "code", "codeVerifier")
 		// then
 		if assert.NoError(t, err) {
 			assert.Equal(t, "application/x-www-form-urlencoded", actualRequestHeader.Get("Content-Type"))
@@ -513,7 +513,7 @@ func TestClient_FetchNewToken(t *testing.T) {
 
 		s.tokenURL = server.URL
 		// when
-		_, err = s.fetchNewToken("code", "codeVerifier")
+		_, err = s.fetchNewToken(t.Context(), "code", "codeVerifier")
 		// then
 		assert.ErrorIs(t, err, ErrTokenError)
 	})
@@ -547,7 +547,7 @@ func TestClient_FetchRefreshedToken(t *testing.T) {
 		require.NoError(t, err)
 		s.tokenURL = server.URL
 		// when
-		x, err := s.fetchRefreshedToken("refreshToken")
+		x, err := s.fetchRefreshedToken(t.Context(), "refreshToken")
 		// then
 		if assert.NoError(t, err) {
 			assert.Equal(t, "application/x-www-form-urlencoded", actualRequestHeader.Get("Content-Type"))
@@ -583,7 +583,7 @@ func TestClient_FetchRefreshedToken(t *testing.T) {
 
 		s.tokenURL = server.URL
 		// when
-		_, err = s.fetchRefreshedToken("refreshToken")
+		_, err = s.fetchRefreshedToken(t.Context(), "refreshToken")
 		// then
 		assert.ErrorIs(t, err, ErrTokenError)
 	})
@@ -592,12 +592,12 @@ func TestClient_FetchRefreshedToken(t *testing.T) {
 func TestClient_Uninitialized(t *testing.T) {
 	t.Run("should return error when trying to authorize without initalization", func(t *testing.T) {
 		c := &Client{}
-		_, err := c.Authorize(context.Background(), []string{})
+		_, err := c.Authorize(t.Context(), []string{})
 		assert.ErrorIs(t, err, ErrNotInitialized)
 	})
 	t.Run("should return error when trying to refresh without initalization", func(t *testing.T) {
 		c := &Client{}
-		err := c.RefreshToken(context.Background(), &Token{})
+		err := c.RefreshToken(t.Context(), &Token{})
 		assert.ErrorIs(t, err, ErrNotInitialized)
 	})
 }
