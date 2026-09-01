@@ -70,7 +70,7 @@ var jwkSetData = map[string]any{
 }
 
 func TestClient_End2End(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	// monkey patching 3rd party packages
 	jwkFetchOrig := jwkFetch
 	jwkFetch = func(_ context.Context, _ string, _ ...jwk.FetchOption) (jwk.Set, error) {
@@ -417,6 +417,34 @@ func TestClient_New(t *testing.T) {
 		})
 		assert.ErrorIs(t, err, ErrInvalid)
 	})
+	t.Run("should return error instead of panicking when callback path is reserved", func(t *testing.T) {
+		for _, p := range []string{"ping", "stop", "authorized", "/"} {
+			t.Run(p, func(t *testing.T) {
+				s, err := NewClient(Config{
+					ClientID:     "DEMO",
+					Port:         8000,
+					CallbackPath: p,
+					OpenURL:      func(string) error { return nil },
+				})
+				if err != nil {
+					// Config was already rejected up front, which is fine.
+					assert.ErrorIs(t, err, ErrInvalid)
+					return
+				}
+				// Config was accepted, so Authorize must fail cleanly rather than
+				// panic when it builds its internal routes.
+				defer func() {
+					if r := recover(); r != nil {
+						t.Fatalf("Authorize panicked for reserved callback path %q: %v", p, r)
+					}
+				}()
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				_, err = s.Authorize(ctx, []string{"alpha"})
+				assert.ErrorIs(t, err, ErrInvalid)
+			})
+		}
+	})
 }
 
 func TestClient_FetchNewToken(t *testing.T) {
@@ -424,6 +452,7 @@ func TestClient_FetchNewToken(t *testing.T) {
 		// given
 		var actualRequestBody []byte
 		var actualRequestHeader http.Header
+		var actualRequestHost string
 		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 			var err error
 			actualRequestBody, err = io.ReadAll(req.Body)
@@ -441,6 +470,7 @@ func TestClient_FetchNewToken(t *testing.T) {
 				t.Fatal(err)
 			}
 			actualRequestHeader = req.Header.Clone()
+			actualRequestHost = req.Host
 		}))
 		defer server.Close()
 		s, err := NewClient(Config{ClientID: "abc", Port: 8000})
@@ -448,10 +478,11 @@ func TestClient_FetchNewToken(t *testing.T) {
 
 		s.tokenURL = server.URL
 		// when
-		x, err := s.fetchNewToken("code", "codeVerifier")
+		x, err := s.fetchNewToken(t.Context(), "code", "codeVerifier")
 		// then
 		if assert.NoError(t, err) {
 			assert.Equal(t, "application/x-www-form-urlencoded", actualRequestHeader.Get("Content-Type"))
+			assert.Equal(t, resourceHost, actualRequestHost)
 			v, err := url.ParseQuery(string(actualRequestBody))
 			if err != nil {
 				t.Fatal(err)
@@ -485,9 +516,50 @@ func TestClient_FetchNewToken(t *testing.T) {
 
 		s.tokenURL = server.URL
 		// when
-		_, err = s.fetchNewToken("code", "codeVerifier")
+		_, err = s.fetchNewToken(t.Context(), "code", "codeVerifier")
 		// then
 		assert.ErrorIs(t, err, ErrTokenError)
+	})
+	t.Run("should return a clear error when API returns a non-JSON error body", func(t *testing.T) {
+		// given
+		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			rw.Header().Set("Content-Type", "text/html")
+			rw.WriteHeader(http.StatusBadGateway)
+			fmt.Fprint(rw, "<html><body>502 Bad Gateway</body></html>")
+		}))
+		defer server.Close()
+		s, err := NewClient(Config{ClientID: "abc", Port: 8000})
+		require.NoError(t, err)
+
+		s.tokenURL = server.URL
+		// when
+		_, err = s.fetchNewToken(t.Context(), "code", "codeVerifier")
+		// then
+		if assert.Error(t, err) {
+			assert.Contains(t, err.Error(), "502")
+		}
+	})
+	t.Run("should return an error instead of an empty token when API returns a non-200 status with no error field", func(t *testing.T) {
+		// given
+		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			rw.Header().Set("Content-Type", "application/json")
+			rw.WriteHeader(http.StatusInternalServerError)
+			d := map[string]any{"message": "internal server error"}
+			b, _ := json.Marshal(d)
+			if _, err := rw.Write(b); err != nil {
+				t.Fatal(err)
+			}
+		}))
+		defer server.Close()
+		s, err := NewClient(Config{ClientID: "abc", Port: 8000})
+		require.NoError(t, err)
+
+		s.tokenURL = server.URL
+		// when
+		x, err := s.fetchNewToken(t.Context(), "code", "codeVerifier")
+		// then
+		assert.Error(t, err)
+		assert.Nil(t, x)
 	})
 }
 
@@ -496,6 +568,7 @@ func TestClient_FetchRefreshedToken(t *testing.T) {
 		// given
 		var actualRequestBody []byte
 		var actualRequestHeader http.Header
+		var actualRequestHost string
 		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 			var err error
 			actualRequestBody, err = io.ReadAll(req.Body)
@@ -513,16 +586,18 @@ func TestClient_FetchRefreshedToken(t *testing.T) {
 				t.Fatal(err)
 			}
 			actualRequestHeader = req.Header.Clone()
+			actualRequestHost = req.Host
 		}))
 		defer server.Close()
 		s, err := NewClient(Config{ClientID: "abc", Port: 8000})
 		require.NoError(t, err)
 		s.tokenURL = server.URL
 		// when
-		x, err := s.fetchRefreshedToken("refreshToken")
+		x, err := s.fetchRefreshedToken(t.Context(), "refreshToken")
 		// then
 		if assert.NoError(t, err) {
 			assert.Equal(t, "application/x-www-form-urlencoded", actualRequestHeader.Get("Content-Type"))
+			assert.Equal(t, resourceHost, actualRequestHost)
 			v, err := url.ParseQuery(string(actualRequestBody))
 			if err != nil {
 				t.Fatal(err)
@@ -555,7 +630,7 @@ func TestClient_FetchRefreshedToken(t *testing.T) {
 
 		s.tokenURL = server.URL
 		// when
-		_, err = s.fetchRefreshedToken("refreshToken")
+		_, err = s.fetchRefreshedToken(t.Context(), "refreshToken")
 		// then
 		assert.ErrorIs(t, err, ErrTokenError)
 	})
@@ -564,12 +639,12 @@ func TestClient_FetchRefreshedToken(t *testing.T) {
 func TestClient_Uninitialized(t *testing.T) {
 	t.Run("should return error when trying to authorize without initalization", func(t *testing.T) {
 		c := &Client{}
-		_, err := c.Authorize(context.Background(), []string{})
+		_, err := c.Authorize(t.Context(), []string{})
 		assert.ErrorIs(t, err, ErrNotInitialized)
 	})
 	t.Run("should return error when trying to refresh without initalization", func(t *testing.T) {
 		c := &Client{}
-		err := c.RefreshToken(context.Background(), &Token{})
+		err := c.RefreshToken(t.Context(), &Token{})
 		assert.ErrorIs(t, err, ErrNotInitialized)
 	})
 }

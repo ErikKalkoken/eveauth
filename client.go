@@ -45,6 +45,8 @@ const (
 //go:embed tmpl/*
 var templFS embed.FS
 
+var authorizedTmpl = template.Must(template.ParseFS(templFS, "tmpl/authorized.html"))
+
 var (
 	ErrAborted        = errors.New("process aborted prematurely")
 	ErrAlreadyRunning = errors.New("another instance is already running")
@@ -67,7 +69,12 @@ type Token struct {
 // newToken creates e new Token from a tokenPayload and returns it.
 func newToken(rawToken *tokenPayload, characterID int, characterName string, scopes []string) *Token {
 	t := &Token{
-		AccessToken:   rawToken.AccessToken,
+		AccessToken: rawToken.AccessToken,
+		// TODO: Token.CharacterID is int32, but EVE's current character ID
+		// range tops out at 2,129,999,999 — only ~17.5M below int32 max
+		// (2,147,483,647). If CCP opens a new range above that ceiling (as
+		// they did in 2016), this silently overflows to a negative value.
+		// Switching to int64 is a breaking API change, so deferred for now.
 		CharacterID:   int32(characterID),
 		CharacterName: characterName,
 		ExpiresAt:     rawToken.expiresAt(),
@@ -162,6 +169,9 @@ func NewClient(config Config) (*Client, error) {
 		cb, _ := strings.CutPrefix(config.CallbackPath, "/")
 		s.callbackPath = cb
 	}
+	if reserved := strings.TrimPrefix(completedPath, "/"); s.callbackPath == "" || s.callbackPath == "ping" || s.callbackPath == "stop" || s.callbackPath == reserved {
+		return nil, fmt.Errorf("callback path %q is reserved: %w", s.callbackPath, ErrInvalid)
+	}
 	if config.HTTPClient != nil {
 		s.httpClient = config.HTTPClient
 	}
@@ -245,7 +255,7 @@ func (s *Client) Authorize(ctx context.Context, scopes []string) (*Token, error)
 		}
 		code := v.Get("code")
 		codeVerifier := serverCtx.Value(keyCodeVerifier).(string)
-		rawToken, err := s.fetchNewToken(code, codeVerifier)
+		rawToken, err := s.fetchNewToken(ctx, code, codeVerifier)
 		if err != nil {
 			processError(w, http.StatusUnauthorized, fmt.Errorf("fetch new token: %w", err))
 			return
@@ -260,7 +270,11 @@ func (s *Client) Authorize(ctx context.Context, scopes []string) (*Token, error)
 			processError(w, http.StatusInternalServerError, fmt.Errorf("extract character ID: %w", err))
 			return
 		}
-		characterName := extractCharacterName(jwtToken)
+		characterName, err := extractCharacterName(jwtToken)
+		if err != nil {
+			processError(w, http.StatusInternalServerError, fmt.Errorf("extract character name: %w", err))
+			return
+		}
 		scopes, err := extractScopes(jwtToken)
 		if err != nil {
 			processError(w, http.StatusInternalServerError, err)
@@ -281,12 +295,7 @@ func (s *Client) Authorize(ctx context.Context, scopes []string) (*Token, error)
 			name = "?"
 			id = "1"
 		}
-		t, err := template.ParseFS(templFS, "tmpl/authorized.html")
-		if err != nil {
-			processError(w, http.StatusInternalServerError, err)
-			return
-		}
-		err = t.Execute(w, map[string]string{
+		err := authorizedTmpl.Execute(w, map[string]string{
 			"ApplicationName": s.applicationName,
 			"CharacterID":     id,
 			"CharacterName":   name,
@@ -441,19 +450,19 @@ func (t *tokenPayload) expiresAt() time.Time {
 }
 
 // fetchNewToken returns a new token from SSO API.
-func (s *Client) fetchNewToken(code, codeVerifier string) (*tokenPayload, error) {
+func (s *Client) fetchNewToken(ctx context.Context, code, codeVerifier string) (*tokenPayload, error) {
 	form := url.Values{
 		"client_id":     {s.clientID},
 		"code_verifier": {codeVerifier},
 		"code":          {code},
 		"grant_type":    {"authorization_code"},
 	}
-	req, err := http.NewRequest("POST", s.tokenURL, strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(ctx, "POST", s.tokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Add("Host", resourceHost)
+	req.Host = resourceHost
 
 	s.logger.Info("Sending auth request to SSO API")
 	resp, err := s.httpClient.Do(req)
@@ -467,7 +476,7 @@ func (s *Client) fetchNewToken(code, codeVerifier string) (*tokenPayload, error)
 	}
 	token := tokenPayload{}
 	if err := json.Unmarshal(body, &token); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("SSO new token: unexpected response with status %d: %w", resp.StatusCode, err)
 	}
 	if token.Error != "" {
 		err := fmt.Errorf(
@@ -476,6 +485,9 @@ func (s *Client) fetchNewToken(code, codeVerifier string) (*tokenPayload, error)
 			ErrTokenError,
 		)
 		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("SSO new token: unexpected status %d: %w", resp.StatusCode, ErrTokenError)
 	}
 	return &token, nil
 }
@@ -489,7 +501,7 @@ func (s *Client) RefreshToken(ctx context.Context, token *Token) error {
 	if token == nil || token.RefreshToken == "" {
 		return fmt.Errorf("refresh: missing refresh token: %w", ErrTokenError)
 	}
-	rawToken, err := s.fetchRefreshedToken(token.RefreshToken)
+	rawToken, err := s.fetchRefreshedToken(ctx, token.RefreshToken)
 	if err != nil {
 		return fmt.Errorf("refresh: %w", err)
 	}
@@ -503,18 +515,18 @@ func (s *Client) RefreshToken(ctx context.Context, token *Token) error {
 	return nil
 }
 
-func (s *Client) fetchRefreshedToken(refreshToken string) (*tokenPayload, error) {
+func (s *Client) fetchRefreshedToken(ctx context.Context, refreshToken string) (*tokenPayload, error) {
 	form := url.Values{
 		"client_id":     {s.clientID},
 		"grant_type":    {"refresh_token"},
 		"refresh_token": {refreshToken},
 	}
-	req, err := http.NewRequest("POST", s.tokenURL, strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(ctx, "POST", s.tokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Add("Host", resourceHost)
+	req.Host = resourceHost
 	s.logger.Debug("Requesting token from SSO API", "grant_type", form.Get("grant_type"), "url", s.tokenURL)
 
 	resp, err := s.httpClient.Do(req)
@@ -528,7 +540,7 @@ func (s *Client) fetchRefreshedToken(refreshToken string) (*tokenPayload, error)
 	}
 	token := tokenPayload{}
 	if err := json.Unmarshal(body, &token); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("SSO refresh token: unexpected response with status %d: %w", resp.StatusCode, err)
 	}
 	if token.Error != "" {
 		err := fmt.Errorf(
@@ -538,6 +550,9 @@ func (s *Client) fetchRefreshedToken(refreshToken string) (*tokenPayload, error)
 			ErrTokenError,
 		)
 		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("SSO refresh token: unexpected status %d: %w", resp.StatusCode, ErrTokenError)
 	}
 	return &token, nil
 }
