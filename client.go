@@ -479,7 +479,7 @@ func (s *Client) fetchNewToken(ctx context.Context, code, codeVerifier string) (
 	}
 	token := tokenPayload{}
 	if err := json.Unmarshal(body, &token); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("SSO new token: unexpected response with status %d: %w", resp.StatusCode, err)
 	}
 	if token.Error != "" {
 		err := fmt.Errorf(
@@ -488,6 +488,9 @@ func (s *Client) fetchNewToken(ctx context.Context, code, codeVerifier string) (
 			ErrTokenError,
 		)
 		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("SSO new token: unexpected status %d: %w", resp.StatusCode, ErrTokenError)
 	}
 	return &token, nil
 }
@@ -540,7 +543,7 @@ func (s *Client) fetchRefreshedToken(ctx context.Context, refreshToken string) (
 	}
 	token := tokenPayload{}
 	if err := json.Unmarshal(body, &token); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("SSO refresh token: unexpected response with status %d: %w", resp.StatusCode, err)
 	}
 	if token.Error != "" {
 		err := fmt.Errorf(
@@ -550,6 +553,9 @@ func (s *Client) fetchRefreshedToken(ctx context.Context, refreshToken string) (
 			ErrTokenError,
 		)
 		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("SSO refresh token: unexpected status %d: %w", resp.StatusCode, ErrTokenError)
 	}
 	return &token, nil
 }

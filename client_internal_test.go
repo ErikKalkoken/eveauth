@@ -520,6 +520,47 @@ func TestClient_FetchNewToken(t *testing.T) {
 		// then
 		assert.ErrorIs(t, err, ErrTokenError)
 	})
+	t.Run("should return a clear error when API returns a non-JSON error body", func(t *testing.T) {
+		// given
+		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			rw.Header().Set("Content-Type", "text/html")
+			rw.WriteHeader(http.StatusBadGateway)
+			fmt.Fprint(rw, "<html><body>502 Bad Gateway</body></html>")
+		}))
+		defer server.Close()
+		s, err := NewClient(Config{ClientID: "abc", Port: 8000})
+		require.NoError(t, err)
+
+		s.tokenURL = server.URL
+		// when
+		_, err = s.fetchNewToken(t.Context(), "code", "codeVerifier")
+		// then
+		if assert.Error(t, err) {
+			assert.Contains(t, err.Error(), "502")
+		}
+	})
+	t.Run("should return an error instead of an empty token when API returns a non-200 status with no error field", func(t *testing.T) {
+		// given
+		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			rw.Header().Set("Content-Type", "application/json")
+			rw.WriteHeader(http.StatusInternalServerError)
+			d := map[string]any{"message": "internal server error"}
+			b, _ := json.Marshal(d)
+			if _, err := rw.Write(b); err != nil {
+				t.Fatal(err)
+			}
+		}))
+		defer server.Close()
+		s, err := NewClient(Config{ClientID: "abc", Port: 8000})
+		require.NoError(t, err)
+
+		s.tokenURL = server.URL
+		// when
+		x, err := s.fetchNewToken(t.Context(), "code", "codeVerifier")
+		// then
+		assert.Error(t, err)
+		assert.Nil(t, x)
+	})
 }
 
 func TestClient_FetchRefreshedToken(t *testing.T) {
