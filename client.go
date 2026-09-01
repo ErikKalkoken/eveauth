@@ -67,7 +67,12 @@ type Token struct {
 // newToken creates e new Token from a tokenPayload and returns it.
 func newToken(rawToken *tokenPayload, characterID int, characterName string, scopes []string) *Token {
 	t := &Token{
-		AccessToken:   rawToken.AccessToken,
+		AccessToken: rawToken.AccessToken,
+		// TODO: Token.CharacterID is int32, but EVE's current character ID
+		// range tops out at 2,129,999,999 — only ~17.5M below int32 max
+		// (2,147,483,647). If CCP opens a new range above that ceiling (as
+		// they did in 2016), this silently overflows to a negative value.
+		// Switching to int64 is a breaking API change, so deferred for now.
 		CharacterID:   int32(characterID),
 		CharacterName: characterName,
 		ExpiresAt:     rawToken.expiresAt(),
