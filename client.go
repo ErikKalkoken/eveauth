@@ -45,6 +45,8 @@ const (
 //go:embed tmpl/*
 var templFS embed.FS
 
+var authorizedTmpl = template.Must(template.ParseFS(templFS, "tmpl/authorized.html"))
+
 var (
 	ErrAborted        = errors.New("process aborted prematurely")
 	ErrAlreadyRunning = errors.New("another instance is already running")
@@ -293,12 +295,7 @@ func (s *Client) Authorize(ctx context.Context, scopes []string) (*Token, error)
 			name = "?"
 			id = "1"
 		}
-		t, err := template.ParseFS(templFS, "tmpl/authorized.html")
-		if err != nil {
-			processError(w, http.StatusInternalServerError, err)
-			return
-		}
-		err = t.Execute(w, map[string]string{
+		err := authorizedTmpl.Execute(w, map[string]string{
 			"ApplicationName": s.applicationName,
 			"CharacterID":     id,
 			"CharacterName":   name,
